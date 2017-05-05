@@ -118,117 +118,66 @@ NH11$everwrk <- factor(NH11$everwrk, levels=c("2 No", "1 Yes"))
 # Regression:
 LogisticModel1 <- glm(everwrk ~ age_p + r_maritl, data=NH11, family="binomial")
 summary(LogisticModel1)
-summary(LogisticModel1)
-
-# Conclusion:
-# Need to group by marital status, creating a binary variable for each, to effectivly preduct for each group?
-
 
 ##   2. Predict the probability of working for each level of marital
 ##      status.
-
 # Load required libraries
 library(dplyr)
 library(caTools)
 library(ROCR)
+library(effects)
+library(ggplot2)
 
 # Load raw data and wrangle:
 NH11 <- readRDS("dataSets/NatHealth2011.rds")
 NH11$everwrk <- factor(NH11$everwrk, levels=c("2 No", "1 Yes"))
-NH11_simple <- filter(NH11, !is.na(everwrk))
+NH11 <- NH11 %>%
+  filter(!is.na(NH11$everwrk))
+
+# convert to 0 or 1
+#NH11$everwork_binary <- NH11$everwrk
+NH11 <- NH11 %>%
+  mutate(everwrk = sub('2 No', 1, everwrk)) %>%
+  mutate(everwrk = sub('1 Yes', 0, everwrk))
+NH11$everwrk <- as.numeric(NH11$everwrk)
+
+table(NH11$everwrk)
+# 2 No = 1887, 1 Yes = 12153
+# Simple baseline is 12153/14040 or 86.5% accuracy
+
+summary(NH11$everwrk)
+str(NH11)
+table(NH11$everwrk)
 
 # Prep test and training data:
-set.seed(1000)
-split = sample.split(NH11_simple$everwrk, SplitRatio = 0.65)
-trainingData = subset(NH11_simple, split == TRUE)
-testingData = subset(NH11_simple, split == FALSE)
+# set.seed(1000)
+split = sample.split(NH11$everwrk, SplitRatio = 0.65)
+trainingData = subset(NH11, split == TRUE)
+testingData = subset(NH11, split == FALSE)
 
-# Create GLM on training data
-model1 <- glm(everwrk ~ r_maritl, data = trainingData, family = binomial)
+# Create GLM for TRAINING data
+model1 <- glm(everwrk ~ r_maritl + age_p, data = trainingData, family = binomial)
 summary(model1)
 
-# Predict & confusion matrix
-predictTest <- predict(model1, type = "response", newdata = testingData)
+# Use the model to predict on TESTING data
+predictTest = predict(model1, type = "response", newdata = testingData)
 table(testingData$everwrk, predictTest > 0.50)
-table(testingData$everwrk, predictTest > 0.60)
-table(testingData$everwrk, predictTest > 0.85)
 
-# ROCR
+# ROCR for out of sample AUC
 ROCRpred = prediction(predictTest, testingData$everwrk)
 as.numeric(performance(ROCRpred, "auc")@y.values)
 
-# Findings:
-# Donald is 100% confident he is confused from too much time spent in the confusion matrix
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize = TRUE, print.cutoffs.at=seq(0,1,0.1), text.adj=c(-0.2, 1.7))
 
-# Alternative 1
-# Is this the correct approch? Necessary to split and test?
-
-library(dplyr)
-library(caTools)
-
-# Load raw data and wrangle:
-NH11 <- readRDS("dataSets/NatHealth2011.rds")
-NH11$everwrk <- factor(NH11$everwrk, levels=c("2 No", "1 Yes"))
-NH11_simple <- filter(NH11, !is.na(everwrk))
-
-# Set binary variables for valid r_marital responses:
-married_spouse_in_house <- NH11_simple$r_maritl
-married_spouse_in_house <- sub("1 Married - spouse in household", 1, married_spouse_in_house)
-married_spouse_in_house[married_spouse_in_house != 1] <- 0
-married_spouse_in_house <- factor(married_spouse_in_house)
-
-married_spouse_not_in_house <- NH11_simple$r_maritl
-married_spouse_not_in_house <- sub("2 Married - spouse not in household", 1, married_spouse_not_in_house)
-married_spouse_not_in_house[married_spouse_not_in_house != 1] <- 0
-married_spouse_not_in_house <- factor(married_spouse_not_in_house)
-
-widowed <- NH11_simple$r_maritl
-widowed <- sub("Widowed", 1, widowed)
-widowed[widowed != 1] <- 0
-widowed <- factor(widowed)
-
-divorced <- NH11_simple$r_maritl
-divorced <- sub("Divorced", 1, divorced)
-divorced[divorced != 1] <- 0
-divorced <- factor(divorced)
-
-separated <- NH11_simple$r_maritl
-separated <- sub("Separated", 1, separated)
-separated[separated != 1] <- 0
-separated <- factor(separated)
-
-never_married <- NH11_simple$r_maritl
-never_married <- sub("Never married", 1, never_married)
-never_married[never_married != 1] <- 0
-never_married <- factor(never_married)
-
-living_with_partner <- NH11_simple$r_maritl
-living_with_partner <- sub("Living with partner", 1, living_with_partner)
-living_with_partner[living_with_partner != 1] <- 0
-living_with_partner <- factor(living_with_partner)
-
-NH11_simple <- NH11_simple %>%
-  select(everwrk, r_maritl) %>%
-  mutate(married_spouse_in_house, married_spouse_not_in_house, widowed, divorced, separated, never_married, living_with_partner)
-
-# Prep test and training data:
-set.seed(1000)
-split = sample.split(NH11_simple$everwrk, SplitRatio = 0.65)
-trainingData = subset(NH11_simple, split == TRUE)
-testingData = subset(NH11_simple, split == FALSE)
-
-# Create GLM on training data
-model1 <- glm(everwrk ~ ., data = trainingData, family = binomial)
-summary(model1)
-
-# Predict
-predictTest <- predict(model1, type = "response", newdata = testingData)
-table(testingData$everwrk, predictTest > 0.75)
-
-library(ROCR)
-
-ROCRpred = prediction(predictTest, testingData$everwrk)
-as.numeric(performance(ROCRpred, "auc")@y.values)
+# Based on a threshold value of 0.5:
+# • Baseline is
+# • Accuracy rate is 86.57%
+# • Error rate is 13.43%
+# • ROC area under the curve (AUC) is 0.67
+# • Statistically significant independent variables are age_p and r_maritl (Widowed,
+#   Divorced, Never married and Living with partner)
+# FINDINGS: Accuracy rate does not beat baseline
 
 ##   Note that the data is not perfectly clean and ready to be modeled. You
 ##   will need to clean up at least some of the variables before fitting
