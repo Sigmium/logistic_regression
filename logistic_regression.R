@@ -101,198 +101,84 @@ plot(allEffects(hyp.out))
 ##   1. Use glm to conduct a logistic regression to predict ever worked
 ##      (everwrk) using age (age_p) and marital status (r_maritl).
 
-# SETUP:
-# Load data and libs
+# Load all libs
 library(dplyr)
-library(caTools)
-library(ROCR)
+library(tidyr)
 library(effects)
-library(ggplot2)
 
-# IMPORT:
+# Load data
 NH11 <- readRDS("dataSets/NatHealth2011.rds")
 
-#### 1) EVALUATE DATA: ####
-str(NH11$everwrk)
+# Evaluate data for needed wrangling
 summary(NH11$everwrk)
-levels(NH11$everwrk)
-summary(NH11$age_p)
-levels(NH11$age_p)
 summary(NH11$r_maritl)
+summary(NH11$age_p)
+str(NH11$everwrk)
+str(NH11$r_maritl)
+levels(NH11$everwrk)
 levels(NH11$r_maritl)
 
-# COPY RAW DATA INTO NEW DF & WRANGLE:
-# Copy raw into new dataframe for wrandling
-NH11_new <- NH11
+# Collapse missing values to NA and format as factor
+NH11$everwrk <- factor(NH11$everwrk, levels=c("2 No", "1 Yes"))
 
-# Dependent variable has too many levels and isnt binary.
-# Collapse missing values to NA, convert to binary and set as numeric.
-NH11_new$everwrk <- factor(NH11_new$everwrk, levels=c("2 No", "1 Yes"))
-NH11_new <- NH11_new %>%
-  filter(!is.na(NH11_new$everwrk))
 
-NH11_new <- NH11_new %>%
-  mutate(everwrk = sub('2 No', 0, everwrk)) %>%
-  mutate(everwrk = sub('1 Yes', 1, everwrk))
-NH11_new$everwrk <- as.factor(NH11_new$everwrk)
+# Review counts by everwrk & r_maritl
+counts <- NH11
+counts$total <- as.numeric("1")
+counts <- counts %>%
+  select(everwrk, r_maritl, total) %>%
+  group_by(everwrk, r_maritl) %>%
+  summarise(total = sum(total)) %>%
+  spread(everwrk, total)
+print(counts)
 
-# Validate changes
-str(NH11_new$everwrk)
-table(NH11_new$everwrk)
+# Filter out NA everwrk, per above table?
+NH11b <- NH11 %>%
+  filter(!is.na(NH11$everwrk))
 
-#### 2) DETERMINE CORRECT APPROACH: ####
-# I'm unsure which of the following two approaches is correct. Both
-# are a variation on how I'm treating the r_maritl data. I need to
-# (a) determine which is correct and why, then (b) ensure I am correctly
-# running the model(s).
-# APPROACH 1 = Copy r_maritl values into their own vector and re-encode to binary numeric values (Row: 151)
-# APPROACH 2 = Re-encode r_maritl values as numeric, in the same vector (Row: 235 )
+# Run regression model1 - everwrk NAs not filtered out
+model1 <- glm(everwrk ~ age_p + r_maritl, data=NH11, family="binomial")
 
-#### 2.a) FIRST APPROACH ####
-# Copy r_maritl values into their own vector and re-encode to binary numeric values.
-# Note: Missing or NAs are excluded (Ex: "0 Under 14 years", "3 Married - spouce in household unknown", and "9
-# Unknown marital status").
-NH11_new$married_spouse_in_house <- NH11_new$r_maritl
-NH11_new$married_spouse_in_house <- sub("1 Married - spouse in household", 1, NH11_new$married_spouse_in_house)
-NH11_new$married_spouse_in_house[NH11_new$married_spouse_in_house != 1] <- 0
-NH11_new$married_spouse_in_house <- as.numeric(NH11_new$married_spouse_in_house)
+summary(model1)
+coef(summary(model1))
 
-NH11_new$married_spouse_not_in_house <- NH11_new$r_maritl
-NH11_new$married_spouse_not_in_house <- sub("2 Married - spouse not in household", 1, NH11_new$married_spouse_not_in_house )
-NH11_new$married_spouse_not_in_house[NH11_new$married_spouse_not_in_house  != 1] <- 0
-NH11_new$married_spouse_not_in_house <- as.numeric(NH11_new$married_spouse_not_in_house )
+model1.tab <- coef(summary(model1))
+model1.tab[, "Estimate"] <- exp(coef(model1))
+model1.tab
 
-NH11_new$widowed <- NH11_new$r_maritl
-NH11_new$widowed <- sub("4 Widowed", 1, NH11_new$widowed)
-NH11_new$widowed[NH11_new$widowed != 1] <- 0
-NH11_new$widowed <- as.numeric(NH11_new$widowed)
+# Run regression model1 - everwrk NAs are filtered out
+model2 <- glm(everwrk ~ age_p + r_maritl, data=NH11b, family="binomial")
 
-NH11_new$divorced <- NH11_new$r_maritl
-NH11_new$divorced <- sub("5 Divorced", 1, NH11_new$divorced )
-NH11_new$divorced[NH11_new$divorced  != 1] <- 0
-NH11_new$divorced <- as.numeric(NH11_new$divorced )
+summary(model2)
+coef(summary(model2))
 
-NH11_new$separated <- NH11_new$r_maritl
-NH11_new$separated <- sub("6 Separated", 1, NH11_new$separated )
-NH11_new$separated[NH11_new$separated  != 1] <- 0
-NH11_new$separated <- as.numeric(NH11_new$separated )
+model1.tab <- coef(summary(model2))
+model1.tab[, "Estimate"] <- exp(coef(model2))
+model1.tab
 
-NH11_new$never_married <- NH11_new$r_maritl
-NH11_new$never_married <- sub("7 Never married", 1, NH11_new$never_married)
-NH11_new$never_married[NH11_new$never_married != 1] <- 0
-NH11_new$never_married <- as.numeric(NH11_new$never_married)
+# Summary:
+# Model1 and Model2 provide identical performance results except 
+# for model1 having ~18.9k observations deleted due to missingness.
+# This confirmed NA filtering is not necessary (Row 135) as the model only 
+# recognises valid binary factor values in the dependent variable. 
 
-NH11_new$living_with_partner <- NH11_new$r_maritl
-NH11_new$living_with_partner <- sub("8 Living with partner", 1, NH11_new$living_with_partner)
-NH11_new$living_with_partner[NH11_new$living_with_partner != 1] <- 0
-NH11_new$living_with_partner <- as.numeric(NH11_new$living_with_partner)
 
-summary(NH11_new)
-table(NH11_new$everwrk)
-# Summary of output:
-# 2 No = 1887, 1 Yes = 12153
-# Simple baseline is 12153/14040 or 86.56% accuracy predicting has ever worked
-
-# Running first model
-LogisticModel1 <- glm(everwrk ~ age_p + married_spouse_in_house + married_spouse_not_in_house + widowed + divorced + separated + never_married + living_with_partner, data=NH11_new, family="binomial")
-summary(LogisticModel1)
-coef(summary(LogisticModel1))
-# AIC = 10327
-# age_p, divorced and living_with_partner are statistically significant
-
-# Running second model with just statistically significant variables (divorced and ligin_with_partner)
-LogisticModel2 <- glm(everwrk ~ age_p + divorced + living_with_partner, data=NH11_new, family="binomial")
-summary(LogisticModel2)
-coef(summary(LogisticModel2))
-# AIC = 10406
-# age_p, divorced and living_with_partner remain statistically significant
-
-#ROC & AUC based on variables used in second model
-
-# Prep test and training data:
-# set.seed(1000)
-split = sample.split(NH11_new$everwrk, SplitRatio = 0.65)
-NEWtrainingData = subset(NH11_new, split == TRUE)
-NEWtestingData = subset(NH11_new, split == FALSE)
-
-# Create GLM using second model settings and TRAINING data
-LogisticMode2 <- glm(everwrk ~ age_p + divorced + living_with_partner, data = NEWtrainingData, family = binomial)
-summary(LogisticModel2)
-# AIC = 10406, unchanged from modeling total data.
-
-# Use the model to predict on TESTING data
-predictTest = predict(LogisticModel2, type = "response", newdata = NEWtestingData)
-table(NEWtestingData$everwrk, predictTest > 0.50)
-
-# ROCR for out of sample AUC
-ROCRpred = prediction(predictTest, NEWtestingData$everwrk)
-as.numeric(performance(ROCRpred, "auc")@y.values)
-# AUC = 67.5%
-
-ROCRperf = performance(ROCRpred, "tpr", "fpr")
-plot(ROCRperf, colorize = TRUE, print.cutoffs.at=seq(0,1,0.1), text.adj=c(-0.2, 1.7))
-
-#### 2.b) SECOND APPROACH ####
-# Convert independent variable "r_maritl" to numeric value(s)
-
-NH11_new <- NH11_new %>%
-  mutate(r_maritl = sub('0 Under 14 years', 0, r_maritl)) %>%
-  mutate(r_maritl = sub('1 Married - spouse in household', 1, r_maritl)) %>%
-  mutate(r_maritl = sub('2 Married - spouse not in household', 2, r_maritl)) %>%
-  mutate(r_maritl = sub('3 Married - spouse in household unknown', 3, r_maritl)) %>%
-  mutate(r_maritl = sub('4 Widowed', 4, r_maritl)) %>%
-  mutate(r_maritl = sub('5 Divorced', 5, r_maritl)) %>%
-  mutate(r_maritl = sub('6 Separated', 6, r_maritl)) %>%
-  mutate(r_maritl = sub('7 Never married', 7, r_maritl)) %>%
-  mutate(r_maritl = sub('8 Living with partner', 8, r_maritl)) %>%
-  mutate(r_maritl = sub('9 Unknown marital status', 9, r_maritl)) %>%
-  filter(r_maritl != "9")
-NH11_new$r_maritl <- as.numeric(NH11_new$r_maritl)
-
-# Check structure and summary
-table(NH11_new$r_maritl)
-table(NH11_new$everwrk, NH11_new$r_maritl)
-table(NH11_new$everwrk)
-# Summary of output:
-# 2 No = 1887, 1 Yes = 12153
-# Simple baseline is 12153/14040 or 86.56% accuracy predicting everwrk
-
-LogisticModel1 <- glm(everwrk ~ age_p + r_maritl, data=NH11_new, family="binomial")
-summary(LogisticModel1)
-coef(summary(LogisticModel1))
-# AIC = 10526
-# age_p and r_maritl both statistically significant
-
-#ROC & AUC
-
-# Prep test and training data:
-# set.seed(1000)
-split = sample.split(NH11_new$everwrk, SplitRatio = 0.65)
-NEWtrainingData = subset(NH11_new, split == TRUE)
-NEWtestingData = subset(NH11_new, split == FALSE)
-
-# Create GLM for TRAINING data
-LogisticModel2 <- glm(everwrk ~ age_p + r_maritl, data = NEWtrainingData, family = binomial)
-summary(LogisticModel2)
-# AIC = 6819, large drop from total data
-# age_p and r_maritl both statistically significant
-
-# Use the model to predict on TESTING data
-predictTest = predict(LogisticModel2, type = "response", newdata = NEWtestingData)
-table(NEWtestingData$everwrk, predictTest > 0.50)
-
-# ROCR for out of sample AUC
-ROCRpred = prediction(predictTest, NEWtestingData$everwrk)
-as.numeric(performance(ROCRpred, "auc")@y.values)
-# AUC = 65.4%
-
-ROCRperf = performance(ROCRpred, "tpr", "fpr")
-plot(ROCRperf, colorize = TRUE, print.cutoffs.at=seq(0,1,0.1), text.adj=c(-0.2, 1.7))
-
-#### 3) PREDICT PROBABILITY OF WORKING BY AGE ####
 ##   2. Predict the probability of working for each level of marital
 ##      status.
 
-# Predict probability of ever working by age, using effects library
-LogisticModel_Q2 <- glm(everwrk ~ age_p + r_maritl, data=NH11_new, family="binomial")
-plot(allEffects(LogisticModel_Q2))
+
+# Create a dataset with predictors set at desired levels (using age 1st & 3rd quartile)
+predDat <- with(NH11,
+                expand.grid(age_p = c(33, 63),
+                            r_maritl = "1 Married - spouse in household", "5 Divorced"))
+
+# predict everwrk at those levels
+cbind(predDat, predict(model1, type = "response",
+                       se.fit = TRUE, interval="confidence",
+                       newdata = predDat))
+
+# Summary:
+# There is am 80.6% probability of a 33y/o having worked who is divorced or married and living with their spouse
+# There is a 91% probability of a 63y/o having worked who is divorced or married and living with their spouse
+
+plot(allEffects(model1))
