@@ -294,5 +294,5 @@ plot(ROCRperf, colorize = TRUE, print.cutoffs.at=seq(0,1,0.1), text.adj=c(-0.2, 
 ##      status.
 
 # Predict probability of ever working by age, using effects library
-LogisticModel_Q2 <- glm(everwrk ~ r_maritl, data=NH11_new, family="binomial")
+LogisticModel_Q2 <- glm(everwrk ~ age_p + r_maritl, data=NH11_new, family="binomial")
 plot(allEffects(LogisticModel_Q2))
