@@ -112,7 +112,7 @@ library(ggplot2)
 # IMPORT:
 NH11 <- readRDS("dataSets/NatHealth2011.rds")
 
-# EVALUATE DATA:
+#### 1) EVALUATE DATA: ####
 str(NH11$everwrk)
 summary(NH11$everwrk)
 levels(NH11$everwrk)
@@ -140,7 +140,7 @@ NH11_new$everwrk <- as.factor(NH11_new$everwrk)
 str(NH11_new$everwrk)
 table(NH11_new$everwrk)
 
-#### TWO APPROACHES: ####
+#### 2) DETERMINE CORRECT APPROACH: ####
 # I'm unsure which of the following two approaches is correct. Both
 # are a variation on how I'm treating the r_maritl data. I need to
 # (a) determine which is correct and why, then (b) ensure I am correctly
@@ -148,7 +148,7 @@ table(NH11_new$everwrk)
 # APPROACH 1 = Copy r_maritl values into their own vector and re-encode to binary numeric values (Row: 151)
 # APPROACH 2 = Re-encode r_maritl values as numeric, in the same vector (Row: 235 )
 
-#### FIRST APPROACH ####
+#### 2.a) FIRST APPROACH ####
 # Copy r_maritl values into their own vector and re-encode to binary numeric values.
 # Note: Missing or NAs are excluded (Ex: "0 Under 14 years", "3 Married - spouce in household unknown", and "9
 # Unknown marital status").
@@ -232,7 +232,7 @@ as.numeric(performance(ROCRpred, "auc")@y.values)
 ROCRperf = performance(ROCRpred, "tpr", "fpr")
 plot(ROCRperf, colorize = TRUE, print.cutoffs.at=seq(0,1,0.1), text.adj=c(-0.2, 1.7))
 
-#### SECOND APPROACH ####
+#### 2.b) SECOND APPROACH ####
 # Convert independent variable "r_maritl" to numeric value(s)
 
 NH11_new <- NH11_new %>%
@@ -245,7 +245,8 @@ NH11_new <- NH11_new %>%
   mutate(r_maritl = sub('6 Separated', 6, r_maritl)) %>%
   mutate(r_maritl = sub('7 Never married', 7, r_maritl)) %>%
   mutate(r_maritl = sub('8 Living with partner', 8, r_maritl)) %>%
-  mutate(r_maritl = sub('9 Unknown marital status', 9, r_maritl))
+  mutate(r_maritl = sub('9 Unknown marital status', 9, r_maritl)) %>%
+  filter(r_maritl != "9")
 NH11_new$r_maritl <- as.numeric(NH11_new$r_maritl)
 
 # Check structure and summary
@@ -287,3 +288,11 @@ as.numeric(performance(ROCRpred, "auc")@y.values)
 
 ROCRperf = performance(ROCRpred, "tpr", "fpr")
 plot(ROCRperf, colorize = TRUE, print.cutoffs.at=seq(0,1,0.1), text.adj=c(-0.2, 1.7))
+
+#### 3) PREDICT PROBABILITY OF WORKING BY AGE ####
+##   2. Predict the probability of working for each level of marital
+##      status.
+
+# Predict probability of ever working by age, using effects library
+LogisticModel_Q2 <- glm(everwrk ~ r_maritl, data=NH11_new, family="binomial")
+plot(allEffects(LogisticModel_Q2))
